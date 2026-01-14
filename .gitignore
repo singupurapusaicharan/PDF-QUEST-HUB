@@ -1,15 +1,18 @@
 # Python
 venv/
-backend/venv/
 __pycache__/
 *.pyc
 
 # Node
 node_modules/
+dist/
 
-# Env files
+# Env
 .env
 
-# OS
-.DS_Store
-Thumbs.db
+# Editor
+.vscode/
+
+# Local data
+backend/uploads/
+backend/pdf_quest.db
