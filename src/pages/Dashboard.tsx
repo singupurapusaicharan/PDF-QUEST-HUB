@@ -727,11 +727,11 @@ export const Dashboard = () => {
         {/* Header */}
         <header className="bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-800/50 px-4 sm:px-6 lg:px-8 py-5 shadow-lg">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 via-teal-800 to-emerald-800 dark:from-white dark:via-teal-200 dark:to-emerald-200 bg-clip-text text-transparent">
+            <div className="flex-1 min-w-0 ml-12 lg:ml-0">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 via-teal-800 to-emerald-800 dark:from-white dark:via-teal-200 dark:to-emerald-200 bg-clip-text text-transparent truncate">
                 Chat with your documents
               </h1>
-              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1 truncate">
                 {activeDocumentId ? `Chatting with: ${documents.find(d => d.id === activeDocumentId)?.filename}` : 'Upload a PDF to get started'}
               </p>
             </div>
@@ -739,12 +739,12 @@ export const Dashboard = () => {
               <DropdownMenu onOpenChange={(open) => { if (open) handleSettingsClick(); }}>
                 <DropdownMenuTrigger asChild>
                   <button 
-                    className="flex items-center space-x-2 px-4 py-2.5 bg-gradient-to-r from-gray-50 to-white dark:from-gray-800 dark:to-gray-800 hover:from-gray-100 hover:to-gray-50 dark:hover:from-gray-700 dark:hover:to-gray-700 border border-gray-200/50 dark:border-gray-700/50 rounded-xl transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-xl"
+                    className="flex items-center space-x-2 px-3 sm:px-4 py-2.5 bg-gradient-to-r from-gray-50 to-white dark:from-gray-800 dark:to-gray-800 hover:from-gray-100 hover:to-gray-50 dark:hover:from-gray-700 dark:hover:to-gray-700 border border-gray-200/50 dark:border-gray-700/50 rounded-xl transition-all duration-300 hover:scale-105 shadow-lg hover:shadow-xl"
                   >
                     <Settings 
                       className={`w-5 h-5 text-gray-700 dark:text-gray-300 ${settingsRotating ? 'settings-rotate' : ''}`}
                     />
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Settings</span>
+                    <span className="hidden sm:inline text-sm font-medium text-gray-700 dark:text-gray-300">Settings</span>
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
