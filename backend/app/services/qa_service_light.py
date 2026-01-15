@@ -25,6 +25,38 @@ except LookupError:
     nltk.download('stopwords', quiet=True)
 
 
+def clean_text(text):
+    """Clean and normalize text by removing excessive whitespace and formatting."""
+    # Remove multiple spaces
+    text = re.sub(r'\s+', ' ', text)
+    # Remove bullet points and special characters at start of lines
+    text = re.sub(r'^\s*[•\-\*]\s*', '', text, flags=re.MULTILINE)
+    # Remove page numbers and headers/footers patterns
+    text = re.sub(r'\b\d+\s*$', '', text, flags=re.MULTILINE)
+    # Remove excessive newlines
+    text = re.sub(r'\n\s*\n', '\n', text)
+    return text.strip()
+
+
+def is_meaningful_sentence(sentence):
+    """Check if a sentence is meaningful (not just a heading or list item)."""
+    sentence = sentence.strip()
+    
+    # Too short
+    if len(sentence) < 30:
+        return False
+    
+    # Just a heading or list item (ends with : or has no verb)
+    if sentence.endswith(':') or sentence.endswith('...'):
+        return False
+    
+    # Contains actual content (has common words)
+    common_words = ['is', 'are', 'was', 'were', 'the', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'at']
+    has_common_word = any(word in sentence.lower().split() for word in common_words)
+    
+    return has_common_word
+
+
 def extract_keywords(text):
     """Extract important keywords from text."""
     try:
@@ -39,12 +71,15 @@ def extract_keywords(text):
 
 def split_into_chunks(text, chunk_size=500, overlap=100):
     """Split text into overlapping chunks for better context."""
+    # Clean the text first
+    text = clean_text(text)
+    
     words = text.split()
     chunks = []
     
     for i in range(0, len(words), chunk_size - overlap):
         chunk = ' '.join(words[i:i + chunk_size])
-        if len(chunk.strip()) > 50:  # Only add substantial chunks
+        if len(chunk.strip()) > 100:  # Only add substantial chunks
             chunks.append(chunk)
     
     return chunks
@@ -65,13 +100,13 @@ def simple_answer_question(document_id: int, question: str, db: Session):
         document_text = get_document_text(document_id, db)
         
         # Clean the text
-        document_text = re.sub(r'\s+', ' ', document_text).strip()
+        document_text = clean_text(document_text)
         
         if len(document_text) < 50:
             answer = "The document doesn't contain enough text to answer questions."
         else:
             # Split into chunks for better context
-            chunks = split_into_chunks(document_text, chunk_size=400, overlap=100)
+            chunks = split_into_chunks(document_text, chunk_size=500, overlap=100)
             
             if not chunks:
                 # Fallback to sentences if chunking fails
@@ -85,7 +120,7 @@ def simple_answer_question(document_id: int, question: str, db: Session):
                 vectorizer = TfidfVectorizer(
                     stop_words='english',
                     max_features=200,
-                    ngram_range=(1, 2),  # Include bigrams for better matching
+                    ngram_range=(1, 2),
                     min_df=1,
                     max_df=0.95
                 )
@@ -99,52 +134,45 @@ def simple_answer_question(document_id: int, question: str, db: Session):
                 chunk_vectors = tfidf_matrix[:-1]
                 similarities = cosine_similarity(question_vector, chunk_vectors)[0]
                 
-                # Get top 3 most relevant chunks (lowered threshold from 0.05 to 0.01)
+                # Get top 3 most relevant chunks
                 top_indices = similarities.argsort()[-3:][::-1]
                 
-                # Always return something if we have chunks
-                if len(chunks) > 0:
-                    # Get the best matching chunks (even if similarity is low)
-                    relevant_chunks = [chunks[i] for i in top_indices[:2]]
-                    
-                    # Extract sentences from these chunks
-                    all_sentences = []
-                    for chunk in relevant_chunks:
-                        sentences = re.split(r'[.!?]+', chunk)
-                        all_sentences.extend([s.strip() for s in sentences if len(s.strip()) > 20])
-                    
-                    if all_sentences:
-                        # Find sentences that contain question keywords
-                        scored_sentences = []
-                        for sentence in all_sentences:
-                            sentence_lower = sentence.lower()
-                            # Score based on keyword matches
-                            score = sum(1 for keyword in question_keywords if keyword in sentence_lower)
+                # Get the best matching chunks
+                relevant_chunks = [chunks[i] for i in top_indices[:2]]
+                
+                # Extract meaningful sentences from these chunks
+                all_sentences = []
+                for chunk in relevant_chunks:
+                    sentences = re.split(r'[.!?]+', chunk)
+                    # Filter for meaningful sentences only
+                    meaningful = [s.strip() for s in sentences if is_meaningful_sentence(s)]
+                    all_sentences.extend(meaningful)
+                
+                if all_sentences:
+                    # Find sentences that contain question keywords
+                    scored_sentences = []
+                    for sentence in all_sentences:
+                        sentence_lower = sentence.lower()
+                        # Score based on keyword matches
+                        score = sum(1 for keyword in question_keywords if keyword in sentence_lower)
+                        if score > 0:  # Only include sentences with keywords
                             scored_sentences.append((score, sentence))
-                        
-                        # Sort by score
+                    
+                    if scored_sentences:
+                        # Sort by score and get top 3
                         scored_sentences.sort(reverse=True, key=lambda x: x[0])
-                        
-                        # If we have sentences with keywords, use them
-                        if scored_sentences[0][0] > 0:
-                            # Get top 3 sentences with keywords
-                            answer_sentences = [s[1] for s in scored_sentences if s[0] > 0][:3]
-                            answer = ". ".join(answer_sentences)
-                            if not answer.endswith('.'):
-                                answer += "."
-                        else:
-                            # No keyword matches, return most relevant chunk
-                            answer = relevant_chunks[0][:600]
-                            if not answer.endswith('.'):
-                                answer += "..."
-                    else:
-                        # No sentences found, return chunk
-                        answer = relevant_chunks[0][:600]
+                        answer_sentences = [s[1] for s in scored_sentences[:3]]
+                        answer = ". ".join(answer_sentences)
                         if not answer.endswith('.'):
-                            answer += "..."
+                            answer += "."
+                    else:
+                        # No keyword matches, return most relevant meaningful sentences
+                        answer = ". ".join(all_sentences[:3])
+                        if not answer.endswith('.'):
+                            answer += "."
                 else:
-                    # No chunks, return beginning of document
-                    answer = document_text[:600]
+                    # No meaningful sentences, return cleaned chunk
+                    answer = relevant_chunks[0][:500]
                     if not answer.endswith('.'):
                         answer += "..."
             
@@ -165,14 +193,31 @@ def simple_answer_question(document_id: int, question: str, db: Session):
                 if best_chunks:
                     # Sort by score and get best chunk
                     best_chunks.sort(reverse=True, key=lambda x: x[0])
-                    answer = best_chunks[0][1][:600]
-                    if not answer.endswith('.'):
-                        answer += "..."
+                    # Extract meaningful sentences from best chunk
+                    sentences = re.split(r'[.!?]+', best_chunks[0][1])
+                    meaningful = [s.strip() for s in sentences if is_meaningful_sentence(s)]
+                    
+                    if meaningful:
+                        answer = ". ".join(meaningful[:3])
+                        if not answer.endswith('.'):
+                            answer += "."
+                    else:
+                        answer = best_chunks[0][1][:500]
+                        if not answer.endswith('.'):
+                            answer += "..."
                 else:
-                    # No matches, return first chunk
-                    answer = chunks[0][:600] if chunks else document_text[:600]
-                    if not answer.endswith('.'):
-                        answer += "..."
+                    # No matches, return first meaningful sentences from document
+                    sentences = re.split(r'[.!?]+', document_text)
+                    meaningful = [s.strip() for s in sentences if is_meaningful_sentence(s)]
+                    
+                    if meaningful:
+                        answer = ". ".join(meaningful[:3])
+                        if not answer.endswith('.'):
+                            answer += "."
+                    else:
+                        answer = chunks[0][:500] if chunks else document_text[:500]
+                        if not answer.endswith('.'):
+                            answer += "..."
         
         # Store the QA pair
         qa_pair = QAPair(
