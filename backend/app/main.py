@@ -18,14 +18,14 @@ app = FastAPI(
 )
 
 # Configure CORS to allow requests from the frontend
-# Update the Vercel URL after deployment
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:8080",
         "http://localhost:5173",
-        "https://*.vercel.app",  # Allows all Vercel deployments
-        "https://vercel.app"
+        "https://pdf-quest-hub.vercel.app",  # Your production Vercel URL
+        "https://vercel.app",
+        "*"  # Allow all origins temporarily for testing
     ],
     allow_credentials=True,
     allow_methods=["*"],
