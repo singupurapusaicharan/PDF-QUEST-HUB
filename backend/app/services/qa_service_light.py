@@ -27,14 +27,35 @@ except LookupError:
 
 def clean_text(text):
     """Clean and normalize text by removing excessive whitespace and formatting."""
+    # Remove lines that look like table of contents (Java - Something)
+    lines = text.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        line = line.strip()
+        # Skip table of contents patterns
+        if re.match(r'^\s*Java\s*-\s*', line, re.IGNORECASE):
+            continue
+        if re.match(r'^\s*\w+\s*-\s*\w+', line) and len(line) < 50:
+            continue
+        # Skip lines that are just headings
+        if line.endswith(':') and len(line) < 60:
+            continue
+        # Skip lines with "explore" or "chapter"
+        if any(word in line.lower() for word in ['explore the', 'chapter', 'tutorial', 'furthermore']):
+            continue
+        cleaned_lines.append(line)
+    
+    text = ' '.join(cleaned_lines)
+    
     # Remove multiple spaces
     text = re.sub(r'\s+', ' ', text)
-    # Remove bullet points and special characters at start of lines
+    # Remove bullet points and special characters at start
     text = re.sub(r'^\s*[•\-\*]\s*', '', text, flags=re.MULTILINE)
-    # Remove page numbers and headers/footers patterns
+    # Remove page numbers
     text = re.sub(r'\b\d+\s*$', '', text, flags=re.MULTILINE)
     # Remove excessive newlines
     text = re.sub(r'\n\s*\n', '\n', text)
+    
     return text.strip()
 
 
@@ -43,16 +64,32 @@ def is_meaningful_sentence(sentence):
     sentence = sentence.strip()
     
     # Too short
-    if len(sentence) < 30:
+    if len(sentence) < 40:
         return False
     
     # Just a heading or list item (ends with : or has no verb)
     if sentence.endswith(':') or sentence.endswith('...'):
         return False
     
+    # Contains "Java -" pattern (table of contents)
+    if 'java -' in sentence.lower() or ' - ' in sentence:
+        return False
+    
+    # Contains "explore" or "chapter" (table of contents language)
+    toc_words = ['explore', 'chapter', 'tutorial', 'following', 'furthermore']
+    if any(word in sentence.lower() for word in toc_words):
+        return False
+    
+    # Must contain actual verbs (is, are, was, were, has, have, can, will, etc.)
+    verbs = ['is', 'are', 'was', 'were', 'has', 'have', 'had', 'can', 'will', 'would', 'should', 'must', 'does', 'do', 'did']
+    has_verb = any(f' {verb} ' in f' {sentence.lower()} ' for verb in verbs)
+    
+    if not has_verb:
+        return False
+    
     # Contains actual content (has common words)
-    common_words = ['is', 'are', 'was', 'were', 'the', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'at']
-    has_common_word = any(word in sentence.lower().split() for word in common_words)
+    common_words = ['the', 'a', 'an', 'to', 'for', 'of', 'in', 'on', 'at', 'by', 'with']
+    has_common_word = any(f' {word} ' in f' {sentence.lower()} ' for word in common_words)
     
     return has_common_word
 
