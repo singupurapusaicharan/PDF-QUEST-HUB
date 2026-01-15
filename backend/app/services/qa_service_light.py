@@ -74,86 +74,105 @@ def simple_answer_question(document_id: int, question: str, db: Session):
             chunks = split_into_chunks(document_text, chunk_size=400, overlap=100)
             
             if not chunks:
-                answer = "I couldn't process the document content properly."
-            else:
-                try:
-                    # Extract keywords from question
-                    question_keywords = extract_keywords(question)
-                    
-                    # Use TF-IDF with better parameters
-                    vectorizer = TfidfVectorizer(
-                        stop_words='english',
-                        max_features=200,
-                        ngram_range=(1, 2),  # Include bigrams for better matching
-                        min_df=1,
-                        max_df=0.95
-                    )
-                    
-                    # Create vectors for chunks and question
-                    all_text = chunks + [question]
-                    tfidf_matrix = vectorizer.fit_transform(all_text)
-                    
-                    # Calculate similarity between question and each chunk
-                    question_vector = tfidf_matrix[-1]
-                    chunk_vectors = tfidf_matrix[:-1]
-                    similarities = cosine_similarity(question_vector, chunk_vectors)[0]
-                    
-                    # Get top 2 most relevant chunks
-                    top_indices = similarities.argsort()[-2:][::-1]
-                    
-                    # Check if we have good matches
-                    if similarities[top_indices[0]] > 0.05:
-                        # Get the best matching chunks
-                        relevant_chunks = [chunks[i] for i in top_indices if similarities[i] > 0.05]
-                        
-                        # Extract the most relevant sentences from these chunks
-                        all_sentences = []
-                        for chunk in relevant_chunks:
-                            sentences = re.split(r'[.!?]+', chunk)
-                            all_sentences.extend([s.strip() for s in sentences if len(s.strip()) > 30])
-                        
-                        if all_sentences:
-                            # Find sentences that contain question keywords
-                            scored_sentences = []
-                            for sentence in all_sentences:
-                                sentence_lower = sentence.lower()
-                                score = sum(1 for keyword in question_keywords if keyword in sentence_lower)
-                                if score > 0:
-                                    scored_sentences.append((score, sentence))
-                            
-                            if scored_sentences:
-                                # Sort by score and get top 3
-                                scored_sentences.sort(reverse=True, key=lambda x: x[0])
-                                answer = ". ".join([s[1] for s in scored_sentences[:3]]) + "."
-                            else:
-                                # Use the most relevant chunk
-                                answer = relevant_chunks[0][:500] + "..."
-                        else:
-                            answer = relevant_chunks[0][:500] + "..."
-                    else:
-                        # No good match found
-                        answer = f"I couldn't find specific information about '{question}' in the document. The document may not contain details about this topic. Try asking about the main topics covered in the document."
+                # Fallback to sentences if chunking fails
+                chunks = [document_text[:1000]]
+            
+            try:
+                # Extract keywords from question
+                question_keywords = extract_keywords(question)
                 
-                except Exception as e:
-                    print(f"Error in TF-IDF processing: {str(e)}")
-                    # Fallback: simple keyword search
-                    question_lower = question.lower()
-                    question_words = [w for w in question_lower.split() if len(w) > 3]
+                # Use TF-IDF with better parameters
+                vectorizer = TfidfVectorizer(
+                    stop_words='english',
+                    max_features=200,
+                    ngram_range=(1, 2),  # Include bigrams for better matching
+                    min_df=1,
+                    max_df=0.95
+                )
+                
+                # Create vectors for chunks and question
+                all_text = chunks + [question]
+                tfidf_matrix = vectorizer.fit_transform(all_text)
+                
+                # Calculate similarity between question and each chunk
+                question_vector = tfidf_matrix[-1]
+                chunk_vectors = tfidf_matrix[:-1]
+                similarities = cosine_similarity(question_vector, chunk_vectors)[0]
+                
+                # Get top 3 most relevant chunks (lowered threshold from 0.05 to 0.01)
+                top_indices = similarities.argsort()[-3:][::-1]
+                
+                # Always return something if we have chunks
+                if len(chunks) > 0:
+                    # Get the best matching chunks (even if similarity is low)
+                    relevant_chunks = [chunks[i] for i in top_indices[:2]]
                     
-                    best_chunk = None
-                    best_score = 0
+                    # Extract sentences from these chunks
+                    all_sentences = []
+                    for chunk in relevant_chunks:
+                        sentences = re.split(r'[.!?]+', chunk)
+                        all_sentences.extend([s.strip() for s in sentences if len(s.strip()) > 20])
                     
-                    for chunk in chunks:
-                        chunk_lower = chunk.lower()
-                        score = sum(1 for word in question_words if word in chunk_lower)
-                        if score > best_score:
-                            best_score = score
-                            best_chunk = chunk
-                    
-                    if best_chunk and best_score > 0:
-                        answer = best_chunk[:500] + "..."
+                    if all_sentences:
+                        # Find sentences that contain question keywords
+                        scored_sentences = []
+                        for sentence in all_sentences:
+                            sentence_lower = sentence.lower()
+                            # Score based on keyword matches
+                            score = sum(1 for keyword in question_keywords if keyword in sentence_lower)
+                            scored_sentences.append((score, sentence))
+                        
+                        # Sort by score
+                        scored_sentences.sort(reverse=True, key=lambda x: x[0])
+                        
+                        # If we have sentences with keywords, use them
+                        if scored_sentences[0][0] > 0:
+                            # Get top 3 sentences with keywords
+                            answer_sentences = [s[1] for s in scored_sentences if s[0] > 0][:3]
+                            answer = ". ".join(answer_sentences)
+                            if not answer.endswith('.'):
+                                answer += "."
+                        else:
+                            # No keyword matches, return most relevant chunk
+                            answer = relevant_chunks[0][:600]
+                            if not answer.endswith('.'):
+                                answer += "..."
                     else:
-                        answer = "I couldn't find relevant information to answer your question. Please try rephrasing or ask about different content in the document."
+                        # No sentences found, return chunk
+                        answer = relevant_chunks[0][:600]
+                        if not answer.endswith('.'):
+                            answer += "..."
+                else:
+                    # No chunks, return beginning of document
+                    answer = document_text[:600]
+                    if not answer.endswith('.'):
+                        answer += "..."
+            
+            except Exception as e:
+                print(f"Error in TF-IDF processing: {str(e)}")
+                # Fallback: simple keyword search
+                question_lower = question.lower()
+                question_words = [w for w in question_lower.split() if len(w) > 3]
+                
+                # Search for chunks containing question words
+                best_chunks = []
+                for chunk in chunks:
+                    chunk_lower = chunk.lower()
+                    score = sum(1 for word in question_words if word in chunk_lower)
+                    if score > 0:
+                        best_chunks.append((score, chunk))
+                
+                if best_chunks:
+                    # Sort by score and get best chunk
+                    best_chunks.sort(reverse=True, key=lambda x: x[0])
+                    answer = best_chunks[0][1][:600]
+                    if not answer.endswith('.'):
+                        answer += "..."
+                else:
+                    # No matches, return first chunk
+                    answer = chunks[0][:600] if chunks else document_text[:600]
+                    if not answer.endswith('.'):
+                        answer += "..."
         
         # Store the QA pair
         qa_pair = QAPair(
