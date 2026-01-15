@@ -1,19 +1,58 @@
 """
 Lightweight Question-answering service for Render free tier.
-Uses simple keyword matching instead of heavy AI models.
+Uses improved keyword matching and context extraction.
 """
 from sqlalchemy.orm import Session
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import re
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
 
 from app.database import QAPair
 from app.services.document_service import get_document_by_id, get_document_text
 
+# Download required NLTK data (only once)
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt', quiet=True)
+
+try:
+    nltk.data.find('corpora/stopwords')
+except LookupError:
+    nltk.download('stopwords', quiet=True)
+
+
+def extract_keywords(text):
+    """Extract important keywords from text."""
+    try:
+        stop_words = set(stopwords.words('english'))
+        words = word_tokenize(text.lower())
+        keywords = [w for w in words if w.isalnum() and w not in stop_words and len(w) > 2]
+        return keywords
+    except:
+        # Fallback if NLTK fails
+        return text.lower().split()
+
+
+def split_into_chunks(text, chunk_size=500, overlap=100):
+    """Split text into overlapping chunks for better context."""
+    words = text.split()
+    chunks = []
+    
+    for i in range(0, len(words), chunk_size - overlap):
+        chunk = ' '.join(words[i:i + chunk_size])
+        if len(chunk.strip()) > 50:  # Only add substantial chunks
+            chunks.append(chunk)
+    
+    return chunks
+
 
 def simple_answer_question(document_id: int, question: str, db: Session):
     """
-    Answer a question using simple keyword matching and text extraction.
+    Answer a question using improved keyword matching and context extraction.
     This is a lightweight alternative that works on Render free tier.
     """
     try:
@@ -25,37 +64,96 @@ def simple_answer_question(document_id: int, question: str, db: Session):
         # Get the document text
         document_text = get_document_text(document_id, db)
         
-        # Split into sentences
-        sentences = re.split(r'[.!?]+', document_text)
-        sentences = [s.strip() for s in sentences if len(s.strip()) > 20]
+        # Clean the text
+        document_text = re.sub(r'\s+', ' ', document_text).strip()
         
-        if not sentences:
-            answer = "I couldn't find enough content in the document to answer your question."
+        if len(document_text) < 50:
+            answer = "The document doesn't contain enough text to answer questions."
         else:
-            # Use TF-IDF to find most relevant sentences
-            vectorizer = TfidfVectorizer(stop_words='english', max_features=100)
+            # Split into chunks for better context
+            chunks = split_into_chunks(document_text, chunk_size=400, overlap=100)
             
-            try:
-                # Create vectors for sentences and question
-                all_text = sentences + [question]
-                tfidf_matrix = vectorizer.fit_transform(all_text)
+            if not chunks:
+                answer = "I couldn't process the document content properly."
+            else:
+                try:
+                    # Extract keywords from question
+                    question_keywords = extract_keywords(question)
+                    
+                    # Use TF-IDF with better parameters
+                    vectorizer = TfidfVectorizer(
+                        stop_words='english',
+                        max_features=200,
+                        ngram_range=(1, 2),  # Include bigrams for better matching
+                        min_df=1,
+                        max_df=0.95
+                    )
+                    
+                    # Create vectors for chunks and question
+                    all_text = chunks + [question]
+                    tfidf_matrix = vectorizer.fit_transform(all_text)
+                    
+                    # Calculate similarity between question and each chunk
+                    question_vector = tfidf_matrix[-1]
+                    chunk_vectors = tfidf_matrix[:-1]
+                    similarities = cosine_similarity(question_vector, chunk_vectors)[0]
+                    
+                    # Get top 2 most relevant chunks
+                    top_indices = similarities.argsort()[-2:][::-1]
+                    
+                    # Check if we have good matches
+                    if similarities[top_indices[0]] > 0.05:
+                        # Get the best matching chunks
+                        relevant_chunks = [chunks[i] for i in top_indices if similarities[i] > 0.05]
+                        
+                        # Extract the most relevant sentences from these chunks
+                        all_sentences = []
+                        for chunk in relevant_chunks:
+                            sentences = re.split(r'[.!?]+', chunk)
+                            all_sentences.extend([s.strip() for s in sentences if len(s.strip()) > 30])
+                        
+                        if all_sentences:
+                            # Find sentences that contain question keywords
+                            scored_sentences = []
+                            for sentence in all_sentences:
+                                sentence_lower = sentence.lower()
+                                score = sum(1 for keyword in question_keywords if keyword in sentence_lower)
+                                if score > 0:
+                                    scored_sentences.append((score, sentence))
+                            
+                            if scored_sentences:
+                                # Sort by score and get top 3
+                                scored_sentences.sort(reverse=True, key=lambda x: x[0])
+                                answer = ". ".join([s[1] for s in scored_sentences[:3]]) + "."
+                            else:
+                                # Use the most relevant chunk
+                                answer = relevant_chunks[0][:500] + "..."
+                        else:
+                            answer = relevant_chunks[0][:500] + "..."
+                    else:
+                        # No good match found
+                        answer = f"I couldn't find specific information about '{question}' in the document. The document may not contain details about this topic. Try asking about the main topics covered in the document."
                 
-                # Calculate similarity between question and each sentence
-                question_vector = tfidf_matrix[-1]
-                sentence_vectors = tfidf_matrix[:-1]
-                similarities = cosine_similarity(question_vector, sentence_vectors)[0]
-                
-                # Get top 3 most relevant sentences
-                top_indices = similarities.argsort()[-3:][::-1]
-                relevant_sentences = [sentences[i] for i in top_indices if similarities[i] > 0.1]
-                
-                if relevant_sentences:
-                    answer = " ".join(relevant_sentences)
-                else:
-                    answer = "I couldn't find a specific answer to your question in the document. Please try rephrasing your question or ask about different content."
-            except:
-                # Fallback: return first few sentences
-                answer = " ".join(sentences[:3])
+                except Exception as e:
+                    print(f"Error in TF-IDF processing: {str(e)}")
+                    # Fallback: simple keyword search
+                    question_lower = question.lower()
+                    question_words = [w for w in question_lower.split() if len(w) > 3]
+                    
+                    best_chunk = None
+                    best_score = 0
+                    
+                    for chunk in chunks:
+                        chunk_lower = chunk.lower()
+                        score = sum(1 for word in question_words if word in chunk_lower)
+                        if score > best_score:
+                            best_score = score
+                            best_chunk = chunk
+                    
+                    if best_chunk and best_score > 0:
+                        answer = best_chunk[:500] + "..."
+                    else:
+                        answer = "I couldn't find relevant information to answer your question. Please try rephrasing or ask about different content in the document."
         
         # Store the QA pair
         qa_pair = QAPair(
