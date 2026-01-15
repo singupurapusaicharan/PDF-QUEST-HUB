@@ -3,19 +3,16 @@ services:
     name: pdf-quest-backend
     env: python
     region: oregon
+    plan: free
     buildCommand: cd backend && pip install -r requirements.txt
     startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.4
       - key: DB_TYPE
-        value: postgres
-      - key: DATABASE_URL
-        fromDatabase:
-          name: pdf-quest-db
-          property: connectionString
+        value: sqlite
+      - key: SQLITE_PATH
+        value: /opt/render/project/src/backend/pdf_quest.db
     
-databases:
-  - name: pdf-quest-db
-    databaseName: pdf_quest
-    user: pdf_quest_user
+    # Free tier uses SQLite instead of PostgreSQL
+    # No separate database service needed
