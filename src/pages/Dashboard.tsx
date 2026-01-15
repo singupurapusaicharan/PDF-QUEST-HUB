@@ -287,6 +287,24 @@ export const Dashboard = () => {
     }
   };
 
+  const handleDocumentSelect = (docId: number) => {
+    const doc = documents.find(d => d.id === docId);
+    if (!doc) return;
+    
+    setActiveDocumentId(docId);
+    
+    // Add welcome message for this document if it's a new selection
+    if (activeDocumentId !== docId) {
+      const welcomeMessage: Message = {
+        id: messages.length + 1,
+        type: 'ai',
+        content: `Great! I'm ready to answer questions about "${doc.filename}". What would you like to know?`,
+        timestamp: new Date()
+      };
+      updateChatMessages(prev => [...prev, welcomeMessage]);
+    }
+  };
+
   const handleSignOut = async () => {
     await signOut();
     navigate('/');
@@ -591,7 +609,7 @@ export const Dashboard = () => {
                   }`}
                 >
                   <button
-                    onClick={() => setActiveDocumentId(doc.id)}
+                    onClick={() => handleDocumentSelect(doc.id)}
                     className="w-full text-left"
                   >
                     <div className="flex items-start space-x-2 pr-16">
