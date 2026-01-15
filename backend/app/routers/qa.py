@@ -2,12 +2,21 @@
 Question-answering router for the PDF Quest API.
 This file defines the endpoints for asking questions about documents and generating summaries.
 """
+import os
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.services import qa_service, document_service
+from app.services import document_service
+
+# Use lightweight service for Render free tier
+USE_LIGHT_MODE = os.getenv("USE_LIGHT_MODE", "false").lower() == "true"
+
+if USE_LIGHT_MODE:
+    from app.services import qa_service_light as qa_service
+else:
+    from app.services import qa_service
 
 # Create router
 router = APIRouter(
@@ -51,12 +60,19 @@ async def ask_question(
                 detail=f"Document with ID {request.document_id} not found"
             )
         
-        # Get the answer
-        result = qa_service.answer_question(
-            document_id=request.document_id,
-            question=request.question,
-            db=db
-        )
+        # Get the answer using appropriate service
+        if USE_LIGHT_MODE:
+            result = qa_service.simple_answer_question(
+                document_id=request.document_id,
+                question=request.question,
+                db=db
+            )
+        else:
+            result = qa_service.answer_question(
+                document_id=request.document_id,
+                question=request.question,
+                db=db
+            )
         
         return result
     except ValueError as e:
@@ -118,7 +134,7 @@ async def summarize_document(
     db: Session = Depends(get_db)
 ):
     """
-    Generate a summary of a document.
+    Generate a summary of a document (disabled in light mode).
     
     Args:
         document_id: The ID of the document
@@ -130,6 +146,12 @@ async def summarize_document(
     Raises:
         HTTPException: If the document is not found or if there's an error
     """
+    if USE_LIGHT_MODE:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Document summarization is not available in lightweight mode. Upgrade to full version for this feature."
+        )
+    
     try:
         # Check if the document exists
         document = document_service.get_document_by_id(document_id, db)

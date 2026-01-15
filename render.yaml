@@ -4,7 +4,7 @@ services:
     env: python
     region: oregon
     plan: free
-    buildCommand: cd backend && pip install -r requirements.txt
+    buildCommand: cd backend && pip install -r requirements-light.txt
     startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -13,6 +13,8 @@ services:
         value: sqlite
       - key: SQLITE_PATH
         value: /opt/render/project/src/backend/pdf_quest.db
+      - key: USE_LIGHT_MODE
+        value: "true"
     
-    # Free tier uses SQLite instead of PostgreSQL
-    # No separate database service needed
+    # Free tier: lightweight version without heavy AI models
+    # Uses simple keyword matching instead of transformers
