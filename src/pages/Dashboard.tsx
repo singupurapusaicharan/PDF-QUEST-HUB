@@ -52,6 +52,7 @@ export const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [settingsRotating, setSettingsRotating] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => {
     const saved = localStorage.getItem('pdf_quest_chats');
     const userId = user?.id || localStorage.getItem('pdf_quest_user');
@@ -505,8 +506,37 @@ export const Dashboard = () => {
         <div className="absolute bottom-20 right-10 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
       </div>
 
+      {/* Mobile Menu Button */}
+      <button
+        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-800"
+      >
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          {isMobileMenuOpen ? (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          ) : (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          )}
+        </svg>
+      </button>
+
+      {/* Mobile Overlay */}
+      {isMobileMenuOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-30"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="relative w-64 bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-r border-gray-200/50 dark:border-gray-800/50 flex flex-col shadow-xl">
+      <aside className={`
+        fixed lg:relative inset-y-0 left-0 z-40
+        w-64 bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl 
+        border-r border-gray-200/50 dark:border-gray-800/50 
+        flex flex-col shadow-xl
+        transform transition-transform duration-300 ease-in-out
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
         {/* Logo */}
         <div className="p-6 border-b border-gray-200/50 dark:border-gray-800/50">
           <Logo size="md" showText={true} />
@@ -693,15 +723,15 @@ export const Dashboard = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="relative flex-1 flex flex-col">
+      <main className="relative flex-1 flex flex-col w-full lg:w-auto">
         {/* Header */}
-        <header className="bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-800/50 px-8 py-5 shadow-lg">
+        <header className="bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-b border-gray-200/50 dark:border-gray-800/50 px-4 sm:px-6 lg:px-8 py-5 shadow-lg">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-gray-900 via-teal-800 to-emerald-800 dark:from-white dark:via-teal-200 dark:to-emerald-200 bg-clip-text text-transparent">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 via-teal-800 to-emerald-800 dark:from-white dark:via-teal-200 dark:to-emerald-200 bg-clip-text text-transparent">
                 Chat with your documents
               </h1>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-1">
                 {activeDocumentId ? `Chatting with: ${documents.find(d => d.id === activeDocumentId)?.filename}` : 'Upload a PDF to get started'}
               </p>
             </div>
