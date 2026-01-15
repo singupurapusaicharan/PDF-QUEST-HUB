@@ -13,3 +13,6 @@ numpy==1.24.3
 
 # Simple text similarity (replaces sentence-transformers)
 nltk==3.8.1
+
+# For Groq API calls (FREE AI)
+requests==2.31.0

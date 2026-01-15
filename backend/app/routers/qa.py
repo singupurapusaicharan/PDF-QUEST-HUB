@@ -10,13 +10,20 @@ from pydantic import BaseModel
 from app.database import get_db
 from app.services import document_service
 
-# Use lightweight service for Render free tier
-USE_LIGHT_MODE = os.getenv("USE_LIGHT_MODE", "false").lower() == "true"
+# Use Groq AI if API key is available, otherwise use lightweight service
+USE_GROQ_AI = os.getenv("GROQ_API_KEY", "") != ""
 
-if USE_LIGHT_MODE:
-    from app.services import qa_service_light as qa_service
+if USE_GROQ_AI:
+    from app.services import qa_service_groq as qa_service
+    print("✅ Using Groq AI for question answering (accurate, fast)")
 else:
-    from app.services import qa_service
+    USE_LIGHT_MODE = os.getenv("USE_LIGHT_MODE", "false").lower() == "true"
+    if USE_LIGHT_MODE:
+        from app.services import qa_service_light as qa_service
+        print("⚠️ Using lightweight keyword matching (limited accuracy)")
+    else:
+        from app.services import qa_service
+        print("⚠️ Using basic QA service")
 
 # Create router
 router = APIRouter(
@@ -61,14 +68,14 @@ async def ask_question(
             )
         
         # Get the answer using appropriate service
-        if USE_LIGHT_MODE:
-            result = qa_service.simple_answer_question(
+        if USE_GROQ_AI:
+            result = qa_service.answer_question_with_ai(
                 document_id=request.document_id,
                 question=request.question,
                 db=db
             )
         else:
-            result = qa_service.answer_question(
+            result = qa_service.simple_answer_question(
                 document_id=request.document_id,
                 question=request.question,
                 db=db
